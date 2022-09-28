@@ -1,0 +1,153 @@
+{%- set node = nodes[(node_number | int)] %}
+---
+variant: fcos
+version: 1.4.0
+
+kernel_arguments:
+  should_exist: ["console=ttyS1,115200n8"]
+  should_not_exist: ["rhgb", "quiet", "console=ttyS0,115200n8"]
+
+storage:
+{% if nodes[(node_number | int)].arch == 'x86_64' %}
+  disks:
+  # - device: /dev/sda
+  #   wipe_table: true
+  #   # Device       Start        End    Sectors  Size Type
+  #   # /dev/sda1     2048       4095       2048    1M BIOS boot
+  #   # /dev/sda2     4096     264191     260096  127M EFI System
+  #   # /dev/sda3   264192    1050623     786432  384M Linux filesystem
+  #   # /dev/sda4  1050624 3906228190 3905177567  1.8T Linux filesystem
+  #   partitions:
+  #   - number: 1
+  #     #label: bios
+  #     start_mib: 2048
+  #     size_mib: 2048
+  #     wipe_partition_label: true
+  #   - number: 2
+  #     label: EFI-SYSTEM
+  #     start_mib: 4096
+  #     size_mib: 260096
+  #     wipe_partition_label: true
+  #   - number: 3
+  #     label: boot
+  #     start_mib: 264192
+  #     size_mib: 1050623
+  #     wipe_partition_label: true
+  #   - number: 4
+  #     label: root
+  #     start_mib: 1050624
+  #     size_mib: 3906228190
+  #     wipe_partition_label: true
+
+  - device: /dev/sdb
+    wipe_table: true
+    partitions:
+    - number: 1
+      label: containers
+
+  filesystems:
+  - path: /var/lib/containers
+    device: /dev/disk/by-partlabel/containers
+    format: xfs
+    wipe_filesystem: true
+    label: containers
+    with_mount_unit: true
+
+{% endif %}
+  
+#  filesystems:
+#  - path: /data
+#    device: /dev/disk/by-partlabel/data
+#    format: xfs
+#    wipe_filesystem: true
+#    label: data
+#    with_mount_unit: true
+
+#  directories:
+#  - path: /data
+
+  files:
+  # Set the system hostname - FQDN
+  - path: /etc/hostname
+    contents:
+      inline: {{ nodes[(node_number | int)].hostname }}
+
+  # CRI-O DNF module
+  - path: /etc/dnf/modules.d/cri-o.module
+    mode: 0644
+    overwrite: true
+    contents:
+      inline: |
+        [cri-o]
+        name=cri-o
+        stream=1.17
+        profiles=
+        state=enabled
+  # YUM repository for kubeadm, kubelet and kubectl
+  - path: /etc/yum.repos.d/kubernetes.repo
+    mode: 0644
+    overwrite: true
+    contents:
+      inline: |
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-{{ nodes[(node_number | int)].arch }}
+        enabled=1
+        gpgcheck=0
+        #gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg
+        repo_gpgcheck=0
+        # repo_gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+  # configuring automatic loading of br_netfilter on startup
+  - path: /etc/modules-load.d/br_netfilter.conf
+    mode: 0644
+    overwrite: true
+    contents:
+      inline: br_netfilter
+  # setting kernel parameters required by kubelet
+  - path: /etc/sysctl.d/kubernetes.conf
+    mode: 0644
+    overwrite: true
+    contents:
+      inline: |
+        net.bridge.bridge-nf-call-iptables=1
+          net.ipv4.ip_forward=1
+
+  - path: /usr/local/bin/install-ansible
+    mode: 0744
+    overwrite: true
+    contents:
+      inline: |
+        #!/bin/bash
+        rpm-ostree install ansible || exit 2
+        rm /usr/local/bin/install-ansible
+        rm /etc/systemd/system/multi-user.target.wants/install-ansible.service
+        systemctl reboot
+        
+systemd:
+  units:
+  - name: install-ansible.service
+    enabled: true
+    contents: |
+      [Unit]
+      Description=Install Ansible before first login and reboot
+      Before=systemd-logind.target
+      Wants=network-online.target
+      After=network-online.target
+      ConditionPathExists=!/usr/bin/ansible
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/install-ansible
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+passwd:
+  users:
+  {% for user in users %}
+  - name: {{ user.name }}
+    password_hash: {{ user.password_hash }}
+    ssh_authorized_keys:
+        - {{ user.public_key }}  
+  {% endfor %}

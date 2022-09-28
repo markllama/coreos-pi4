@@ -1,0 +1,5 @@
+# Ignore Emacs backup files
+*~
+
+data
+images
