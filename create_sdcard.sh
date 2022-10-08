@@ -1,12 +1,17 @@
 #!/bin/bash
 
-OPTSPEC="c:d:i:"
+OPTSPEC="c:d:D:n:"
 
 : ${DEFAULT_CONFIG_FILE=config.yaml}
 : ${DEFAULT_DATA_DIR=./data}
+: ${DEFAULT_IMAGE_DIR=./images}
 
 : ${BUTANE_TEMPLATE=templates/config.bu.j2}
 : ${NMCONNECTION_TEMPLATE=templates/device.nmconnection.j2}
+
+: ${FIRMWARE_VERSION=v1.33}  # use latest one from https://github.com/pftf/RPi4/releases
+: ${FIRMWARE_ZIPFILE=RPi4_UEFI_Firmware_${FIRMWARE_VERSION}.zip}
+: ${FIRMWARE_URL=https://github.com/pftf/RPi4/releases/download/${FIRMWARE_VERSION}/${FIRMWARE_ZIPFILE}}
 
 function main() {
 
@@ -16,26 +21,25 @@ function main() {
     
     : ${CONFIG_FILE=${DEFAULT_CONFIG_FILE}}
     : ${DATA_DIR=${DEFAULT_DATA_DIR}}
-
+    : ${IMAGE_DIR=${DEFAULT_IMAGE_DIR}}
+    
     check_requirements
-
-#    download_stock_image ${IMAGE_DIR}
 
     # Get node number from hostname
     local NODE_NUMBER=$(node_index ${NODE_HOSTNAME})
-
     
     # Only generate configs for Raspberry Pi 4
-    [ $(node_architecture ${NODE_NUMBER}) == "aarch64" ] || continue
+    [ ! $(node_architecture ${NODE_NUMBER}) == "aarch64" ] &&
+        echo "Node ${NODE_HOSTNAME} is not a raspberry pi: $(node_architecture ${NODE_NUMBER})" &&
+        exit 1
         
     generate_config_files ${NODE_NUMBER}
-    #create_image ${NODE_NUMBER}
-        
-    done
+    download_stock_image ${IMAGE_DIR}
+    create_sd_card ${BLOCK_DEVICE} ${DATA_DIR}/${NODE_HOSTNAME}
 }
 
 function parse_arguments() {
-    while getopts ${OPTSPEC} OPT ; do
+    while getopts "${OPTSPEC}" OPT ; do
         case ${OPT} in
             c)
                 CONFIG_FILE=${OPTARG}
@@ -44,18 +48,36 @@ function parse_arguments() {
             d)
                 DATA_DIR=${OPTARG}
                 ;;
+
+            i)
+                IMAGE_DIR=${OPTARG}
+                ;;
             
             n)
-                HOSTNAME=${OPTARG}
+                NODE_HOSTNAME=${OPTARG}
                 ;;
+
+            D)
+                BLOCK_DEVICE=${OPTARG}
+                ;;
+
             *)
-                echo FATAL: unprocessed option - "$OPT"
+                echo "FATAL: unprocessed option - $OPT"
                 exit 1
                 ;;
         esac
-
     done
 
+    if [ "${NODE_HOSTNAME}x" == "x" ] ; then
+        echo "Missing required argument: -n <NODE_HOSTNAME>"
+        exit 1
+    fi
+
+    if [ "${BLOCK_DEVICE}x" == "x" ] ; then
+        echo "Missing required argument: -D <BLOCK_DEVICE>"
+        exit 1
+    fi
+    
 }
 
 function check_requirements() {
@@ -99,7 +121,7 @@ function seq_nodes() {
 
 function node_index() {
     local NODE_HOSTNAME=$1
-    
+    yq ".nodes | map(.hostname == \"${NODE_HOSTNAME}\") | index(true)" ${CONFIG_FILE}
 }
 
 function node_hostname() {
@@ -133,16 +155,18 @@ function nic_name() {
 function download_stock_image() {
     local IMAGE_DIR=$1
 
+    mkdir -p ${IMAGE_DIR}
     coreos-installer download \
                      --stream stable \
                      --architecture aarch64 \
                      --platform metal \
-                     --format iso \
+                     --format raw.xz \
                      --directory ${IMAGE_DIR}
 }
 
 function image_filename() {
-    ls ${IMAGE_DIR}/fedora-coreos-*-live.aarch64.iso | head -1
+    local IMAGE_DIR=$1
+    ls ${IMAGE_DIR}/fedora-coreos-*-metal.aarch64.raw.xz | head -1
 }
 
 function generate_config_files() {
@@ -201,38 +225,66 @@ function generate_nmconnection() {
     transform_nmconnection ${NODE_INDEX} ${NIC_INDEX} >${NMCONNECTION_FILE}
 }
 
-function create_image() {
-    local NODE_NUMBER=$1
-
-    local NODE_HOSTNAME=$(node_hostname ${NODE_NUMBER})
-    local IGNITION_FILE=${DATA_DIR}/${NODE_HOSTNAME}/config.ign
-    local NM_CONFIG_FILE=${DATA_DIR}/${NODE_HOSTNAME}/*.nmconnection
-    local INPUT_IMAGE=$(image_filename)
-    local OUTPUT_IMAGE=${IMAGE_DIR}/$(node_hostname ${NODE_NUMBER}).iso
-
-    
-    echo Creating image for node ${NODE_HOSTNAME}
-
-    # Remove old images before replacing them
-    [ -f ${OUTPUT_IMAGE} ] && rm -f ${OUTPUT_IMAGE}
-    
-    coreos-installer iso customize \
-                     --dest-ignition ${IGNITION_FILE} \
-                     --network-keyfile ${NM_CONFIG_FILE} \
-                     --output  ${OUTPUT_IMAGE} \
-                     ${INPUT_IMAGE}
-      
-    # Add ignition file
-
-    # add nic files
-}
 
 function create_sd_card() {
+    local BLOCK_DEVICE=$1
+    local NODE_CONFIG_DIR=$2
     #
-    #
-    #
-    
+    unmount_filesystems ${BLOCK_DEVICE}
+    install_coreos_to_usb ${BLOCK_DEVICE} ${NODE_CONFIG_DIR}/config.ign ${NODE_CONFIG_DIR}
+    sleep 2
+    local EFI_PARTITION=$(get_EFI_partition ${BLOCK_DEVICE})
+    overlay_UEFI_Firmware ${EFI_PARTITION}
 }
+
+function unmount_filesystems() {
+    local DEVICE=$1
+    local PARTITIONS=($(mount | grep "^${DEVICE}" | cut -d' ' -f3))
+    local PROCEED
+    
+    for MOUNTPOINT in ${PARTITIONS[@]} ; do
+        ! grep -q -e "^/run/media/${USER}" <((echo ${MOUNTPOINT})) &&
+            echo "FATAL: device not mounted in user space: ${MOUNTPOINT}" && exit 3
+        echo "INFO: unmounting $(mount | grep ${MOUNTPOINT} | cut -d' ' -f1) [${MOUNTPOINT}]"
+        read -p 'Proceed? [y/N]: ' PROCEED
+        [ "${PROCEED}x" != 'yx' ] && echo "FATAL: not unmounting ${MOUNTPOINT}" && exit 4
+        sudo umount ${MOUNTPOINT}
+    done
+}
+
+function install_coreos_to_usb() {
+    local DEVICE=$1
+    local CONFIG=$2
+    local NETDIR=$3
+    chmod 600 ${NETDIR}/*
+    sudo coreos-installer install \
+         --architecture aarch64 \
+         --image-file $(image_filename ${IMAGE_DIR}) \
+         --ignition-file ${CONFIG} \
+         --copy-network \
+         --network-dir ${NETDIR} \
+         ${DEVICE}
+}
+
+function get_EFI_partition() {
+    local DEVICE=$1
+    lsblk ${DEVICE} -J -oLABEL,PATH  |
+        jq -r '.blockdevices[] | select(.label == "EFI-SYSTEM")'.path
+}
+
+function overlay_UEFI_Firmware() {
+    local EFI_PARTITION=$1
+    
+    local TMPDIR=$(mktemp --directory /tmp/fcos-rpi-efi-XXXX)
+    sudo mount ${EFI_PARTITION} ${TMPDIR}
+    sudo curl -L -o /tmp/${FIRMWARE_ZIPFILE} ${FIRMWARE_URL}
+    sudo unzip -f -o /tmp/${FIRMWARE_ZIPFILE} -d ${TMPDIR}
+    sudo rm /tmp/${FIRMWARE_ZIPFILE}
+    sudo umount ${TMPDIR}
+    sudo rm -rf ${TMPDIR}
+    sync
+}
+
 #
 #
 #
