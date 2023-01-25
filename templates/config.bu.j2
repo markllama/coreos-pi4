@@ -4,8 +4,8 @@ variant: fcos
 version: 1.4.0
 
 kernel_arguments:
-  should_exist: ["console=ttyS1,115200n8"]
-  should_not_exist: ["rhgb", "quiet", "console=ttyS0,115200n8"]
+  should_exist: ["console=ttyS0,115200n8"]
+  should_not_exist: ["rhgb", "quiet", "console=ttyS1,115200n8"]
 
 storage:
 {% if nodes[(node_number | int)].arch == 'x86_64' %}
@@ -45,14 +45,33 @@ storage:
     - number: 1
       label: containers
 
-  filesystems:
+  filesystems: 
   - path: /var/lib/containers
     device: /dev/disk/by-partlabel/containers
     format: xfs
     wipe_filesystem: true
     label: containers
     with_mount_unit: true
-
+{% else %}
+  disks:
+  - device: /dev/sda
+    wipe_table: false
+    partitions:
+    - label: EFI-SYSTEM
+      number: 2
+    - label: boot
+      number: 3
+    - label: root
+      number: 4
+  filesystems:
+  - device: /dev/disk/by-partlabel/boot
+    label: boot
+    format: ext4
+    wipe_filesystem: false
+  - device: /dev/disk/by-partlabel/root
+    label: root
+    format: xfs
+    wipe_filesystem: false
 {% endif %}
   
 #  filesystems:

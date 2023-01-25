@@ -7,6 +7,7 @@
 : ${FIRMWARE_ZIPFILE=RPi4_UEFI_Firmware_${FIRMWARE_VERSION}.zip}
 : ${FIRMWARE_URL=https://github.com/pftf/RPi4/releases/download/${FIRMWARE_VERSION}/${FIRMWARE_ZIPFILE}}
 
+: ${COREOS_INSTALLER=${HOME}/bin/coreos-installer}
 # DEVICE
 # NODENAME
 
@@ -91,7 +92,7 @@ function install_coreos_to_usb() {
     local CONFIG=$2
     local NETDIR=$3
     chmod 600 ${NETDIR}/*
-    sudo coreos-installer install \
+    sudo ${COREOS_INSTALLER} install \
          --architecture aarch64 \
          --ignition-file ${CONFIG} \
          --copy-network \

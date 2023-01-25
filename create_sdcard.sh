@@ -13,6 +13,8 @@ OPTSPEC="c:d:D:n:"
 : ${FIRMWARE_ZIPFILE=RPi4_UEFI_Firmware_${FIRMWARE_VERSION}.zip}
 : ${FIRMWARE_URL=https://github.com/pftf/RPi4/releases/download/${FIRMWARE_VERSION}/${FIRMWARE_ZIPFILE}}
 
+: ${COREOS_INSTALLER=${HOME}/bin/coreos-installer}
+
 function main() {
 
     echo "starting"
@@ -156,7 +158,7 @@ function download_stock_image() {
     local IMAGE_DIR=$1
 
     mkdir -p ${IMAGE_DIR}
-    coreos-installer download \
+    ${COREOS_INSTALLER} download \
                      --stream stable \
                      --architecture aarch64 \
                      --platform metal \
@@ -257,12 +259,13 @@ function install_coreos_to_usb() {
     local CONFIG=$2
     local NETDIR=$3
     chmod 600 ${NETDIR}/*
-    sudo coreos-installer install \
+    sudo ${COREOS_INSTALLER} install \
          --architecture aarch64 \
          --image-file $(image_filename ${IMAGE_DIR}) \
-         --ignition-file ${CONFIG} \
          --copy-network \
          --network-dir ${NETDIR} \
+         --console ttyS0,115200 \
+         --ignition-file ${CONFIG} \
          ${DEVICE}
 }
 
@@ -278,13 +281,30 @@ function overlay_UEFI_Firmware() {
     local TMPDIR=$(mktemp --directory /tmp/fcos-rpi-efi-XXXX)
     sudo mount ${EFI_PARTITION} ${TMPDIR}
     sudo curl -L -o /tmp/${FIRMWARE_ZIPFILE} ${FIRMWARE_URL}
-    sudo unzip -f -o /tmp/${FIRMWARE_ZIPFILE} -d ${TMPDIR}
+    sudo unzip /tmp/${FIRMWARE_ZIPFILE} -d ${TMPDIR}
     sudo rm /tmp/${FIRMWARE_ZIPFILE}
     sudo umount ${TMPDIR}
     sudo rm -rf ${TMPDIR}
     sync
 }
 
+function overload_UBoot_Firmware() {
+    local EFI_PARTITION=$1
+
+    local MIRROR_URL='https://mirrors.fedoraproject.org/metalink?repo=fedora-$releasever&arch=$basearch'
+    local arch="aarch64"
+    local releasever="37"
+    local mirror_url="http://mirror.fcix.net/fedora/linux/development/$releasever/Everything/${arch}/os/"
+    local UBOOT_PACKAGES="uboot-images-armv8 bcm283x-firmware bcm283x-overlays"
+    
+    # mkdir -p /tmp/RPi4boot/boot/efi/
+    # sudo dnf install -y --downloadonly --release=$RELEASE --forcearch=aarch64 \
+    # --destdir=/tmp/RPi4boot/ ${UBOOT_PACKAGES}
+
+    local TMPDIR=$(mktemp --directory /tmp/fcos-rpi-efi-XXXX)
+    sudo mount ${EFI_PARTITION} ${TMPDIR}
+    
+}
 #
 #
 #
