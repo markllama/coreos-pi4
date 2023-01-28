@@ -9,7 +9,7 @@ OPTSPEC="c:d:D:n:"
 : ${BUTANE_TEMPLATE=templates/config.bu.j2}
 : ${NMCONNECTION_TEMPLATE=templates/device.nmconnection.j2}
 
-: ${FIRMWARE_VERSION=v1.33}  # use latest one from https://github.com/pftf/RPi4/releases
+: ${FIRMWARE_VERSION=v1.32}  # use latest one from https://github.com/pftf/RPi4/releases
 : ${FIRMWARE_ZIPFILE=RPi4_UEFI_Firmware_${FIRMWARE_VERSION}.zip}
 : ${FIRMWARE_URL=https://github.com/pftf/RPi4/releases/download/${FIRMWARE_VERSION}/${FIRMWARE_ZIPFILE}}
 
@@ -288,7 +288,7 @@ function overlay_UEFI_Firmware() {
     sync
 }
 
-function overload_UBoot_Firmware() {
+function overlay_UBoot_Firmware() {
     local EFI_PARTITION=$1
 
     local MIRROR_URL='https://mirrors.fedoraproject.org/metalink?repo=fedora-$releasever&arch=$basearch'
