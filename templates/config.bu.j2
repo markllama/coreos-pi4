@@ -52,26 +52,26 @@ storage:
     wipe_filesystem: true
     label: containers
     with_mount_unit: true
-{% else %}
-  disks:
-  - device: /dev/sda
-    wipe_table: false
-    partitions:
-    - label: EFI-SYSTEM
-      number: 2
-    - label: boot
-      number: 3
-    - label: root
-      number: 4
-  filesystems:
-  - device: /dev/disk/by-partlabel/boot
-    label: boot
-    format: ext4
-    wipe_filesystem: false
-  - device: /dev/disk/by-partlabel/root
-    label: root
-    format: xfs
-    wipe_filesystem: false
+{% else %} 
+  disks: 
+  - device: /dev/mmcblk1 
+    wipe_table: false 
+    partitions: 
+    - label: EFI-SYSTEM 
+      number: 2 
+    - label: boot 
+      number: 3 
+    - label: root 
+      number: 4 
+  filesystems: 
+  - device: /dev/disk/by-partlabel/boot 
+    label: boot 
+    format: ext4 
+    wipe_filesystem: false 
+  - device: /dev/disk/by-partlabel/root 
+    label: root 
+    format: xfs 
+    wipe_filesystem: false 
 {% endif %}
   
 #  filesystems:
