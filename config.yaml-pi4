@@ -1,0 +1,82 @@
+networks:
+  prov:
+    base: 172.17.0.0
+    mask: 255.255.0.0
+    gate: 172.17.0.1
+  data:
+    base: 172.18.0.0
+    mask: 255.255.0.0
+
+dns:
+  search: lab.lamourine.org
+  nameserver: 192.168.1.1
+#  nameserver: 172.17.0.2
+
+http:
+  port: 8080
+# A list of MAC/IP address pairs for the clients to be booted 
+# - The IP addresses must be in an IP range on the interface above
+nodes: 
+  - hostname: node1
+    arch: aarch64
+    nics:
+      - name: enabcm6e4ei0
+        network: data
+        mac_address: dc:a6:32:4b:25:1b
+        ipv4_address: 172.18.0.11/16
+      - name: eth0
+        network: prov
+        mac_address: a0:ce:c8:fd:e9:d9
+        ipv4_address: 172.17.0.11/16
+    
+  - hostname: node2
+    arch: aarch64
+    provisioning_nic: enp1s0f0
+    nics:
+    - name: enabcm6e4ei0
+      network: data
+      mac_address: dc:a6:32:4b:24:55
+      ipv4_address: 172.18.0.12/16
+    - name: eth0
+      network: prov
+      mac_address: a0:ce:c8:ff:f2:c9
+      ipv4_address: 172.17.0.12/16
+    
+  - hostname: node3
+    arch: aarch64
+    provisioning_nic: enp1s0f0
+    nics:
+    - name: enabcm6e4ei0
+      network: data
+      mac_address: dc:a6:32:67:7c:67
+      ipv4_address: 172.18.0.13/16
+    - name: eth0
+      network: prov
+      mac_address: a0:ce:c8:fe:c3:7c
+      ipv4_address: 172.17.0.13/16
+
+  - hostname: node4
+    arch: aarch64
+    provisioning_nic: enp1s0f0
+    nics:
+    - name: enabcm6e4ei0
+      network: data
+      mac_address: dc:a6:32:a4:23:21
+      ipv4_address: 172.18.0.14/16
+    - name: eth0
+      network: prov
+      mac_address: 00:e0:4c:68:ba:0a
+      ipv4_address: 172.17.0.14/16
+
+# ...
+
+# Optional, if observing or logging in on the serial console
+console: ttyS1,115200n8
+
+users:
+ - name: core
+   # mkpasswd --method=sha256crypt
+   # cleartext: core - replace with your value if desired
+   password_hash: "$1$ebTQlHxO$unj0Wz5STH9.tMn1yFWYE0"
+   # SSH public key
+   public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJDsdnCbVpUYOiqvjys/Ub4VP7Kpe7X98MIUREygC+9Q mark@lab.lamourine.org"

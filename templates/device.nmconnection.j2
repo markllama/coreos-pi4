@@ -1,22 +1,21 @@
-{% set nic = nodes[node_number| int].nics[nic_number | int] %}
+{%- set nic = nodes[node_number| int].nics[nic_number | int] -%}
+{%- set nic_network = networks[nic.network] -%}
 [connection]
 id={{ nic.name }}
 type=ethernet
-autoconnect-priority=-999
 interface-name={{ nic.name }}
+autoconnect=true
+autoconnect-priority=-999
 
 [ethernet]
+mac-address={{ nic.mac_address }}
 
 [ipv4]
 method=manual
-address1={{ nic.ipv4_address }}
-gateway={{ network.gate }}
+address1={{ nic.ipv4_address }},{{ nic_network.gate }}
 dns={{ dns.nameserver }}
-{%- if network.routes is defined %}
-routes={{ network.routes }}
-{%- endif %}
+dns-search={{ dns.search }}
+
 [ipv6]
 addr-gen-mode=stable-privacy
 method=disabled
-
-[proxy]
